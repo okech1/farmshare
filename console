@@ -1,0 +1,138 @@
+const mysql = require('mysql');
+const readlineSync = require('readline-sync');
+const bcrypt = require('bcrypt');
+const jwt = require('jsonwebtoken');
+
+const connection = mysql.createConnection({
+    host: 'localhost',
+    user: 'root',
+    password: 'your_password',
+    database: 'farmshare'
+});
+
+connection.connect(err => {
+    if (err) throw err;
+    console.log('Connected to MySQL');
+});
+
+const secret = 'your_jwt_secret';
+
+function registerUser() {
+    const username = readlineSync.question('Enter username: ');
+    const password = readlineSync.question('Enter password: ', { hideEchoBack: true });
+    const hashedPassword = bcrypt.hashSync(password, 10);
+
+    const query = 'INSERT INTO users (username, password) VALUES (?, ?)';
+    connection.query(query, [username, hashedPassword], (err, results) => {
+        if (err) throw err;
+        console.log('User registered successfully.');
+    });
+}
+
+function loginUser() {
+    const username = readlineSync.question('Enter username: ');
+    const password = readlineSync.question('Enter password: ', { hideEchoBack: true });
+
+    const query = 'SELECT * FROM users WHERE username = ?';
+    connection.query(query, [username], (err, results) => {
+        if (err) throw err;
+        if (results.length === 0) {
+            console.log('User not found.');
+            return;
+        }
+
+        const user = results[0];
+        if (bcrypt.compareSync(password, user.password)) {
+            const token = jwt.sign({ id: user.id, username: user.username }, secret, { expiresIn: '1h' });
+            console.log('Login successful. Your token:', token);
+        } else {
+            console.log('Incorrect password.');
+        }
+    });
+}
+
+function createListing(userId) {
+    const title = readlineSync.question('Enter listing title: ');
+    const description = readlineSync.question('Enter description: ');
+    const price = readlineSync.questionFloat('Enter price: ');
+    const location = readlineSync.question('Enter location: ');
+    const type = readlineSync.question('Enter type of equipment/land: ');
+    const availability = readlineSync.question('Enter availability: ');
+    const imageUrl = readlineSync.question('Enter image URL: ');
+
+    const query = 'INSERT INTO listings (user_id, title, description, price, location, type, availability, image_url) VALUES (?, ?, ?, ?, ?, ?, ?, ?)';
+    connection.query(query, [userId, title, description, price, location, type, availability, imageUrl], (err, results) => {
+        if (err) throw err;
+        console.log('Listing created successfully.');
+    });
+}
+
+function searchListings() {
+    const location = readlineSync.question('Enter location to search: ');
+    const type = readlineSync.question('Enter type of equipment/land: ');
+    const availability = readlineSync.question('Enter availability: ');
+
+    const query = 'SELECT * FROM listings WHERE location = ? AND type = ? AND availability = ?';
+    connection.query(query, [location, type, availability], (err, results) => {
+        if (err) throw err;
+        console.log('Search results:');
+        results.forEach(listing => {
+            console.log(`ID: ${listing.id}, Title: ${listing.title}, Price: ${listing.price}, Location: ${listing.location}, Type: ${listing.type}, Availability: ${listing.availability}`);
+        });
+    });
+}
+
+function sendMessage(senderId) {
+    const recipientId = readlineSync.questionInt('Enter recipient user ID: ');
+    const content = readlineSync.question('Enter your message: ');
+
+    const query = 'INSERT INTO messages (sender_id, recipient_id, content) VALUES (?, ?, ?)';
+    connection.query(query, [senderId, recipientId, content], (err, results) => {
+        if (err) throw err;
+        console.log('Message sent successfully.');
+    });
+}
+
+function main() {
+    while (true) {
+        console.log('\n1. Register\n2. Login\n3. Create Listing\n4. Search Listings\n5. Send Message\n6. Exit');
+        const choice = readlineSync.questionInt('Enter your choice: ');
+
+        switch (choice) {
+            case 1:
+                registerUser();
+                break;
+            case 2:
+                loginUser();
+                break;
+            case 3:
+                const token = readlineSync.question('Enter your JWT token: ');
+                try {
+                    const decoded = jwt.verify(token, secret);
+                    createListing(decoded.id);
+                } catch (err) {
+                    console.log('Invalid token.');
+                }
+                break;
+            case 4:
+                searchListings();
+                break;
+            case 5:
+                const msgToken = readlineSync.question('Enter your JWT token: ');
+                try {
+                    const decoded = jwt.verify(msgToken, secret);
+                    sendMessage(decoded.id);
+                } catch (err) {
+                    console.log('Invalid token.');
+                }
+                break;
+            case 6:
+                connection.end();
+                process.exit();
+            default:
+                console.log('Invalid choice. Please try again.');
+        }
+    }
+}
+
+main();
